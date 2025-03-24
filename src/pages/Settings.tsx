@@ -1,153 +1,166 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Box,
-  Paper,
-  Typography,
-  TextField,
   Button,
-  Grid,
+  Container,
   FormControl,
+  FormControlLabel,
   InputLabel,
-  Select,
   MenuItem,
+  Paper,
+  Select,
+  Switch,
+  TextField,
+  Typography,
   Alert
 } from '@mui/material';
 import { useTradingStore } from '../store/tradingStore';
-import { TradingConfig } from '../models/types';
 import { BybitService } from '../api/bybit';
+import { TradingConfig } from '../models/types';
 
-const Settings: React.FC = () => {
-  const { config, setConfig } = useTradingStore();
-  const [apiKey, setApiKey] = useState(config?.apiKey || '');
-  const [apiSecret, setApiSecret] = useState(config?.apiSecret || '');
-  const [mode, setMode] = useState<'classic' | 'hedge'>(config?.mode || 'classic');
-  const [leverage, setLeverage] = useState<number>(config?.leverage || 1);
-  const [symbol, setSymbol] = useState(config?.symbol || 'BTCUSDT');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+export default function Settings() {
+  const { config, setConfig, setConnected, setError } = useTradingStore();
+  
+  const [formData, setFormData] = useState<TradingConfig>({
+    apiKey: config?.apiKey || '',
+    apiSecret: config?.apiSecret || '',
+    testnet: config?.testnet || true,
+    mode: config?.mode || 'ISOLATED',
+    leverage: config?.leverage || 1,
+    symbol: config?.symbol || 'BTCUSDT'
+  });
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const handleChange = (field: keyof TradingConfig, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    setSuccess(false);
+  };
 
   const handleSave = async () => {
+    setIsLoading(true);
+    setSuccess(false);
+    setError(null);
+
     try {
-      const newConfig: TradingConfig = {
-        apiKey,
-        apiSecret,
-        mode,
-        leverage,
-        symbol
-      };
+      console.log('Tentando conectar com Bybit...', {
+        apiKeyLength: formData.apiKey.length,
+        secretLength: formData.apiSecret.length,
+        testnet: formData.testnet
+      });
 
-      // Test connection
-      const bybit = new BybitService(newConfig);
-      await bybit.getAccountInfo();
+      const bybit = new BybitService(
+        formData.apiKey.trim(),
+        formData.apiSecret.trim(),
+        formData.testnet
+      );
 
-      setConfig(newConfig);
-      setSuccess('Settings saved successfully!');
-      setError(null);
-    } catch (err) {
-      setError('Failed to connect to Bybit. Please check your API credentials.');
-      setSuccess(null);
+      const accountInfo = await bybit.getAccountInfo();
+      console.log('Conta conectada:', {
+        accountType: accountInfo.accountType,
+        totalEquity: accountInfo.totalEquity
+      });
+
+      setConfig(formData);
+      setConnected(true);
+      setSuccess(true);
+    } catch (error: any) {
+      console.error('Erro ao conectar:', error);
+      setError(error.message || 'Erro ao conectar com Bybit');
+      setConnected(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <Box>
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          API Settings
+    <Container maxWidth="sm">
+      <Paper sx={{ p: 4, mt: 4 }}>
+        <Typography variant="h5" gutterBottom>
+          Configurações
         </Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              label="API Key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              type="password"
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              label="API Secret"
-              value={apiSecret}
-              onChange={(e) => setApiSecret(e.target.value)}
-              type="password"
-            />
-          </Grid>
-        </Grid>
+
+        <Box component="form" sx={{ mt: 2 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={formData.testnet}
+                onChange={(e) => handleChange('testnet', e.target.checked)}
+              />
+            }
+            label="Usar Testnet"
+          />
+
+          <TextField
+            fullWidth
+            margin="normal"
+            label="API Key"
+            value={formData.apiKey}
+            onChange={(e) => handleChange('apiKey', e.target.value)}
+          />
+
+          <TextField
+            fullWidth
+            margin="normal"
+            label="API Secret"
+            type="password"
+            value={formData.apiSecret}
+            onChange={(e) => handleChange('apiSecret', e.target.value)}
+          />
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Modo</InputLabel>
+            <Select
+              value={formData.mode}
+              label="Modo"
+              onChange={(e) => handleChange('mode', e.target.value)}
+            >
+              <MenuItem value="ISOLATED">Isolated</MenuItem>
+              <MenuItem value="CROSS">Cross</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Alavancagem</InputLabel>
+            <Select
+              value={formData.leverage}
+              label="Alavancagem"
+              onChange={(e) => handleChange('leverage', e.target.value)}
+            >
+              <MenuItem value={1}>1x</MenuItem>
+              <MenuItem value={3}>3x</MenuItem>
+              <MenuItem value={5}>5x</MenuItem>
+              <MenuItem value={10}>10x</MenuItem>
+              <MenuItem value={20}>20x</MenuItem>
+            </Select>
+          </FormControl>
+
+          <TextField
+            fullWidth
+            margin="normal"
+            label="Par de Trading"
+            value={formData.symbol}
+            onChange={(e) => handleChange('symbol', e.target.value)}
+          />
+
+          <Button
+            fullWidth
+            variant="contained"
+            onClick={handleSave}
+            disabled={isLoading}
+            sx={{ mt: 3 }}
+          >
+            {isLoading ? 'Salvando...' : 'Salvar'}
+          </Button>
+
+          {success && (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              Configurações salvas com sucesso!
+            </Alert>
+          )}
+        </Box>
       </Paper>
-
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          Trading Settings
-        </Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <FormControl fullWidth>
-              <InputLabel>Trading Mode</InputLabel>
-              <Select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as 'classic' | 'hedge')}
-              >
-                <MenuItem value="classic">Classic</MenuItem>
-                <MenuItem value="hedge">Hedge</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12}>
-            <FormControl fullWidth>
-              <InputLabel>Default Leverage</InputLabel>
-              <Select
-                value={leverage}
-                onChange={(e) => setLeverage(Number(e.target.value))}
-              >
-                <MenuItem value={1}>1x</MenuItem>
-                <MenuItem value={3}>3x</MenuItem>
-                <MenuItem value={5}>5x</MenuItem>
-                <MenuItem value={10}>10x</MenuItem>
-                <MenuItem value={20}>20x</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12}>
-            <FormControl fullWidth>
-              <InputLabel>Default Symbol</InputLabel>
-              <Select
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-              >
-                <MenuItem value="BTCUSDT">BTC/USDT</MenuItem>
-                <MenuItem value="ETHUSDT">ETH/USDT</MenuItem>
-                <MenuItem value="SOLUSDT">SOL/USDT</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      {success && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          {success}
-        </Alert>
-      )}
-
-      <Button
-        variant="contained"
-        color="primary"
-        fullWidth
-        onClick={handleSave}
-        disabled={!apiKey || !apiSecret}
-      >
-        Save Settings
-      </Button>
-    </Box>
+    </Container>
   );
-};
-
-export default Settings;
+}

@@ -1,63 +1,115 @@
-import { LinearClient } from 'bybit-api';
-import { TradingConfig, Position, AccountBalance } from '../models/types';
+import { BybitClient } from './bybitClient';
+import { TradingConfig } from '../models/types';
 
 export class BybitService {
-  private client: LinearClient;
+  private client: BybitClient;
 
-  constructor(config: TradingConfig) {
-    this.client = new LinearClient({
-      key: config.apiKey,
-      secret: config.apiSecret,
-      testnet: false
+  constructor(apiKey: string, apiSecret: string, testnet: boolean) {
+    console.log('Inicializando BybitService:', {
+      testnet,
+      apiKeyLength: apiKey.length,
+      apiSecretLength: apiSecret.length
+    });
+
+    this.client = new BybitClient({
+      apiKey,
+      apiSecret,
+      testnet
     });
   }
 
-  async getAccountInfo(): Promise<AccountBalance> {
-    const response = await this.client.getWalletBalance();
-    const balance = response.result.USDT;
-    return {
-      total: Number(balance.wallet_balance),
-      available: Number(balance.available_balance),
-      used: Number(balance.used_margin)
-    };
+  async getAccountInfo(): Promise<any> {
+    try {
+      console.log('Obtendo informações da conta...');
+      const response = await this.client.getWalletBalance({
+        accountType: 'UNIFIED'
+      });
+
+      if (!response.result || !response.result.list || response.result.list.length === 0) {
+        throw new Error('Conta não encontrada ou sem saldo');
+      }
+
+      const account = response.result.list[0];
+      console.log('Dados da conta:', {
+        totalEquity: account.totalEquity,
+        accountType: account.accountType,
+        totalAvailableBalance: account.totalAvailableBalance
+      });
+
+      return account;
+    } catch (error: any) {
+      console.error('Erro ao obter informações da conta:', error);
+      throw error;
+    }
   }
 
-  async createOrder(symbol: string, side: 'Buy' | 'Sell', qty: number, price?: number) {
-    return await this.client.placeActiveOrder({
-      side,
-      symbol,
-      order_type: price ? 'Limit' : 'Market',
-      qty: qty.toString(),
-      price: price?.toString(),
-      time_in_force: 'GoodTillCancel',
-      reduce_only: false,
-      close_on_trigger: false
-    });
+  async createOrder(order: any) {
+    try {
+      const response = await this.client.submitOrder({
+        category: 'linear',
+        symbol: order.symbol,
+        side: order.side,
+        orderType: order.type,
+        qty: order.quantity.toString(),
+        price: order.price?.toString(),
+        timeInForce: 'GoodTillCancel',
+        positionIdx: 0,
+      });
+
+      return response.result;
+    } catch (error: any) {
+      console.error('Erro ao criar ordem:', error);
+      throw error;
+    }
   }
 
-  async getPositions(symbol: string): Promise<Position[]> {
-    const response = await this.client.getPosition({ symbol });
-    return response.result.map(pos => ({
-      symbol: pos.symbol,
-      side: pos.side.toLowerCase() as 'long' | 'short',
-      size: Number(pos.size),
-      entryPrice: Number(pos.entry_price),
-      leverage: Number(pos.leverage),
-      unrealizedPnl: Number(pos.unrealised_pnl)
-    }));
+  async getPositions() {
+    try {
+      const response = await this.client.getPositionInfo({
+        category: 'linear',
+        symbol: 'BTCUSDT',
+      });
+
+      return response.result.list.map((position: any) => ({
+        symbol: position.symbol,
+        side: position.side.toLowerCase(),
+        size: Number(position.size),
+        entryPrice: Number(position.avgPrice),
+        leverage: Number(position.leverage),
+        unrealizedPnl: Number(position.unrealisedPnl),
+        marginType: position.tradeMode === 0 ? 'cross' : 'isolated',
+        positionValue: Number(position.positionValue),
+      }));
+    } catch (error: any) {
+      console.error('Erro ao buscar posições:', error);
+      throw error;
+    }
   }
 
-  async setLeverage(symbol: string, leverage: number) {
-    return await this.client.setUserLeverage({
-      symbol,
-      leverage: leverage.toString()
-    });
+  async setLeverage(leverage: number, symbol: string) {
+    try {
+      await this.client.setLeverage({
+        category: 'linear',
+        symbol: symbol,
+        buyLeverage: leverage.toString(),
+        sellLeverage: leverage.toString(),
+      });
+    } catch (error: any) {
+      console.error('Erro ao definir alavancagem:', error);
+      throw error;
+    }
   }
 
   async setPositionMode(mode: 'classic' | 'hedge', symbol: string) {
-    return await this.client.setPositionMode({
-      symbol,
-      mode: mode === 'hedge' ? 'BothSide' : 'MergedSingle'
-    });
+    try {
+      await this.client.switchPositionMode({
+        category: 'linear',
+        symbol: symbol,
+        mode: mode === 'classic' ? 0 : 3,
+      });
+    } catch (error: any) {
+      console.error('Erro ao definir modo de posição:', error);
+      throw error;
+    }
   }
 }
